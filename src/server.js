@@ -40,6 +40,8 @@ const scanFileConcurrency = Number(process.env.SCAN_FILE_CONCURRENCY || 20);
 const FileStore = createFileStore(session);
 
 const scanCache = new Map();
+const oauthStateCookieName = "malware-cleanup.oauth_state";
+const authCookieName = "malware-cleanup.auth";
 
 function getSessionSecret() {
   if (process.env.SESSION_SECRET) {
@@ -57,6 +59,80 @@ function getSessionSecret() {
   return secret;
 }
 
+const sessionSecret = getSessionSecret();
+const cookieDefaults = {
+  httpOnly: true,
+  sameSite: "lax",
+  secure: appBaseUrl.startsWith("https://"),
+  path: "/",
+};
+
+function parseCookies(req) {
+  const header = req.headers.cookie;
+  if (!header) return {};
+
+  return Object.fromEntries(
+    header.split(";").map((cookie) => {
+      const [rawName, ...rawValue] = cookie.trim().split("=");
+      return [rawName, decodeURIComponent(rawValue.join("="))];
+    }),
+  );
+}
+
+function getCookie(req, name) {
+  return parseCookies(req)[name] || "";
+}
+
+function encryptionKey() {
+  return crypto.createHash("sha256").update(sessionSecret).digest();
+}
+
+function encryptValue(value) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", encryptionKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+
+  return [iv, tag, encrypted].map((part) => part.toString("base64url")).join(".");
+}
+
+function decryptValue(value) {
+  try {
+    const [encodedIv, encodedTag, encodedEncrypted] = value.split(".");
+    if (!encodedIv || !encodedTag || !encodedEncrypted) return "";
+
+    const decipher = crypto.createDecipheriv(
+      "aes-256-gcm",
+      encryptionKey(),
+      Buffer.from(encodedIv, "base64url"),
+    );
+    decipher.setAuthTag(Buffer.from(encodedTag, "base64url"));
+
+    return Buffer.concat([
+      decipher.update(Buffer.from(encodedEncrypted, "base64url")),
+      decipher.final(),
+    ]).toString("utf8");
+  } catch {
+    return "";
+  }
+}
+
+function getAuthToken(req) {
+  return req.session.githubToken || decryptValue(getCookie(req, authCookieName));
+}
+
+function setAuthToken(res, token) {
+  res.cookie(authCookieName, encryptValue(token), {
+    ...cookieDefaults,
+    maxAge: 1000 * 60 * 60 * 24 * 14,
+  });
+}
+
+function clearAuthCookies(res) {
+  res.clearCookie(authCookieName, cookieDefaults);
+  res.clearCookie(oauthStateCookieName, cookieDefaults);
+}
+
 function requireOAuthConfig() {
   const missing = [];
   if (!clientId) missing.push("GITHUB_CLIENT_ID");
@@ -68,7 +144,7 @@ function requireOAuthConfig() {
 }
 
 function requireLogin(req, res, next) {
-  if (!req.session.githubToken) {
+  if (!getAuthToken(req)) {
     res.status(401).json({ error: "Not authenticated" });
     return;
   }
@@ -77,7 +153,7 @@ function requireLogin(req, res, next) {
 }
 
 function getOctokit(req) {
-  return createOctokit(req.session.githubToken);
+  return createOctokit(getAuthToken(req));
 }
 
 function flattenFindings(scanResults) {
@@ -160,7 +236,7 @@ app.use(express.json({ limit: "1mb" }));
 app.use(
   session({
     name: "malware-cleanup.sid",
-    secret: getSessionSecret(),
+    secret: sessionSecret,
     store: new FileStore({
       path: sessionDir,
       retries: 1,
@@ -183,6 +259,10 @@ app.get("/auth/github", (req, res) => {
 
   const state = crypto.randomBytes(24).toString("hex");
   req.session.oauthState = state;
+  res.cookie(oauthStateCookieName, state, {
+    ...cookieDefaults,
+    maxAge: 1000 * 60 * 10,
+  });
 
   const authorizeUrl = new URL("https://github.com/login/oauth/authorize");
   authorizeUrl.searchParams.set("client_id", clientId);
@@ -198,7 +278,8 @@ app.get("/auth/github/callback", async (req, res, next) => {
   try {
     requireOAuthConfig();
 
-    if (!req.query.code || req.query.state !== req.session.oauthState) {
+    const expectedState = req.session.oauthState || getCookie(req, oauthStateCookieName);
+    if (!req.query.code || !expectedState || req.query.state !== expectedState) {
       res.status(400).send("Invalid OAuth callback.");
       return;
     }
@@ -228,6 +309,8 @@ app.get("/auth/github/callback", async (req, res, next) => {
 
     req.session.githubToken = tokenData.access_token;
     req.session.oauthState = null;
+    setAuthToken(res, tokenData.access_token);
+    res.clearCookie(oauthStateCookieName, cookieDefaults);
     scanCache.delete(req.session.id);
 
     res.redirect("/");
@@ -238,6 +321,7 @@ app.get("/auth/github/callback", async (req, res, next) => {
 
 app.post("/auth/logout", (req, res) => {
   scanCache.delete(req.session.id);
+  clearAuthCookies(res);
   req.session.destroy(() => {
     res.json({ ok: true });
   });
