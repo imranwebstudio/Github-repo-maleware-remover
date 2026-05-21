@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GitHub Malware Cleanup</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <h1>GitHub Malware Cleanup</h1>
+        <p>Scan accessible repositories for the known obfuscated JavaScript payload and suspicious batch files.</p>
+      </div>
+      <div id="account" class="account"></div>
+    </header>
+
+    <main>
+      <section id="login-panel" class="panel">
+        <h2>Connect GitHub</h2>
+        <p>
+          Sign in with GitHub to grant repository access. Organization repositories are included when GitHub and the
+          organization allow the OAuth app to access them.
+        </p>
+        <a class="primary-link" href="/auth/github">Login with GitHub</a>
+      </section>
+
+      <section id="app-panel" class="panel hidden">
+        <div class="toolbar">
+          <div>
+            <h2>Infected Repositories</h2>
+            <p id="repo-summary">Loading repositories...</p>
+          </div>
+          <div class="actions">
+            <button id="select-all" type="button">Select All</button>
+            <button id="scan" class="primary" type="button">Scan Selected</button>
+            <button id="logout" type="button">Logout</button>
+          </div>
+        </div>
+
+        <div id="status" class="status" role="status"></div>
+        <div class="repo-search">
+          <input
+            id="repo-search"
+            type="search"
+            placeholder="search repositories by owner, name, visibility, branch..."
+            autocomplete="off"
+          />
+        </div>
+        <div class="repo-search">
+          <input
+            id="file-url-input"
+            type="url"
+            placeholder="paste GitHub file link: https://github.com/owner/repo/blob/branch/path/to/file.js"
+            autocomplete="off"
+          />
+          <div class="actions" style="margin-top: 8px; justify-content: flex-start">
+            <button id="clean-file-url" class="danger" type="button">Clean File Link</button>
+          </div>
+        </div>
+        <div class="workspace-grid">
+          <div>
+            <div id="repo-list" class="repo-list"></div>
+          </div>
+          <div class="terminal-column">
+            <aside id="manual-terminal-shell" class="terminal-shell hidden">
+              <div class="terminal-header">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+                <span class="terminal-title">manual-scan</span>
+              </div>
+              <div id="manual-terminal" class="terminal" aria-live="polite"></div>
+            </aside>
+            <aside class="terminal-shell">
+              <div class="terminal-header">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+                <span class="terminal-title">background-scan</span>
+              </div>
+              <div id="background-terminal" class="terminal" aria-live="polite"></div>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <section id="results-panel" class="panel hidden">
+        <div class="toolbar">
+          <div>
+            <h2>Scan Results</h2>
+            <p id="result-summary"></p>
+          </div>
+          <div class="actions">
+            <button id="select-findings" type="button">Select Findings</button>
+            <button id="cleanup" class="danger" type="button">Remove Selected</button>
+          </div>
+        </div>
+        <div id="results"></div>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

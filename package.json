@@ -1,0 +1,26 @@
+{
+  "name": "github-malware-cleanup-bot",
+  "version": "1.0.0",
+  "description": "CLI bot that removes a known obfuscated JavaScript malware snippet from a GitHub repository and deletes .bat files.",
+  "type": "module",
+  "bin": {
+    "cleanup-malware": "./src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "web": "node src/server.js",
+    "check": "node scripts/check.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@octokit/rest": "^21.1.1",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-session": "^1.18.1",
+    "session-file-store": "^1.5.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}
